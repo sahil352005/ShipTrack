@@ -1,0 +1,186 @@
+{
+  "id": null,
+  "uid": "logistics-intelligence",
+  "title": "Smart Logistics Intelligence",
+  "tags": ["logistics", "intelligence", "ai", "realtime"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 2,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Executive Summary",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 3 },
+      "datasource": "PostgreSQL",
+      "targets": [{
+        "rawSql": "SELECT json_build_object('total_shipments', COALESCE(t.total, 0), 'delayed', COALESCE(t.delayed, 0), 'on_time_rate', COALESCE(t.on_time_rate, 0), 'critical_risk', COALESCE(cr.critical, 0), 'bottlenecks', COALESCE(bh.bottleneck, 0), 'sla_violations', COALESCE(sla.violations, 0)) FROM (SELECT COUNT(*) as total, SUM(CASE WHEN is_delayed THEN 1 ELSE 0 END) as delayed, ROUND(100.0 * SUM(CASE WHEN NOT is_delayed THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) as on_time_rate FROM shipments) t, (SELECT COUNT(*) as critical FROM shipment_risk WHERE risk_score >= 80) cr, (SELECT COUNT(*) as bottleneck FROM warehouse_health WHERE bottleneck = TRUE) bh, (SELECT COUNT(*) as violations FROM sla_violations WHERE created_at > NOW() - INTERVAL '24 hours') sla",
+        "format": "table",
+        "refId": "A"
+      }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } } }
+    },
+    {
+      "id": 2,
+      "title": "Critical Risk Shipments",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 3, "w": 4, "h": 4 },
+      "datasource": "PostgreSQL",
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) AS value FROM shipment_risk WHERE risk_score >= 80",
+        "format": "table",
+        "refId": "A"
+      }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 10 }] } } }
+    },
+    {
+      "id": 3,
+      "title": "Bottleneck Warehouses",
+      "type": "stat",
+      "gridPos": { "x": 4, "y": 3, "w": 4, "h": 4 },
+      "datasource": "PostgreSQL",
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) AS value FROM warehouse_health WHERE bottleneck = TRUE",
+        "format": "table",
+        "refId": "A"
+      }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 3 }] } } }
+    },
+    {
+      "id": 4,
+      "title": "Active Alerts",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 3, "w": 4, "h": 4 },
+      "datasource": "PostgreSQL",
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) AS value FROM alerts WHERE resolved = FALSE",
+        "format": "table",
+        "refId": "A"
+      }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 10 }] } } }
+    },
+    {
+      "id": 5,
+      "title": "SLA Violations (24h)",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 3, "w": 4, "h": 4 },
+      "datasource": "PostgreSQL",
+      "targets": [{
+        "rawSql": "SELECT COUNT(*) AS value FROM sla_violations WHERE created_at > NOW() - INTERVAL '24 hours'",
+        "format": "table",
+        "refId": "A"
+      }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" },
+      "fieldConfig": { "defaults": { "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 10 }, { "color": "red", "value": 20 }] } } }
+    },
+    {
+      "id": 6,
+      "title": "On-Time Rate",
+      "type": "gauge",
+      "gridPos": { "x": 16, "y": 3, "w": 8, "h": 4 },
+      "datasource": "PostgreSQL",
+      "targets": [{
+        "rawSql": "SELECT ROUND(100.0 * SUM(CASE WHEN NOT is_delayed THEN 1 ELSE 0 END) / NULLIF(COUNT(*), 0), 2) AS value FROM shipments",
+        "format": "table",
+        "refId": "A"
+      }],
+      "fieldConfig": { "defaults": { "min": 0, "max": 100, "unit": "percent", "thresholds": { "steps": [{ "color": "red", "value": 0 }, { "color": "yellow", "value": 70 }, { "color": "green", "value": 90 }] } } }
+    },
+    {
+      "id": 7,
+      "title": "Risk Distribution",
+      "type": "piechart",
+      "gridPos": { "x": 0, "y": 7, "w": 8, "h": 8 },
+      "datasource": "PostgreSQL",
+      "targets": [{
+        "rawSql": "SELECT risk_level AS metric, COUNT(*) AS value FROM shipment_risk GROUP BY risk_level ORDER BY CASE risk_level WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3 ELSE 4 END",
+        "format": "table",
+        "refId": "A"
+      }],
+      "options": { "pieType": "donut", "displayLabels": ["name", "percent"] }
+    },
+    {
+      "id": 8,
+      "title": "Warehouse Health Status",
+      "type": "barchart",
+      "gridPos": { "x": 8, "y": 7, "w": 8, "h": 8 },
+      "datasource": "PostgreSQL",
+      "targets": [{
+        "rawSql": "SELECT warehouse_id AS metric, delay_rate AS value FROM warehouse_health ORDER BY delay_rate DESC LIMIT 10",
+        "format": "table",
+        "refId": "A"
+      }],
+      "options": { "orientation": "horizontal" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "percent" } }
+    },
+    {
+      "id": 9,
+      "title": "Active Alerts by Type",
+      "type": "table",
+      "gridPos": { "x": 16, "y": 7, "w": 8, "h": 8 },
+      "datasource": "PostgreSQL",
+      "targets": [{
+        "rawSql": "SELECT type, severity, COUNT(*) as count FROM alerts WHERE resolved = FALSE GROUP BY type, severity ORDER BY CASE severity WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3 ELSE 4 END",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "id": 10,
+      "title": "High Risk Shipments",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 15, "w": 12, "h": 8 },
+      "datasource": "PostgreSQL",
+      "targets": [{
+        "rawSql": "SELECT sr.shipment_id, sr.risk_score, sr.risk_level, sr.reason, s.region, s.warehouse_id FROM shipment_risk sr LEFT JOIN shipments s ON sr.shipment_id = s.shipment_id WHERE sr.risk_score >= 60 ORDER BY sr.risk_score DESC LIMIT 20",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "id": 11,
+      "title": "Region Performance",
+      "type": "table",
+      "gridPos": { "x": 12, "y": 15, "w": 12, "h": 8 },
+      "datasource": "PostgreSQL",
+      "targets": [{
+        "rawSql": "SELECT region, total_shipments, delivered, delayed, on_time_rate, trend FROM region_performance ORDER BY on_time_rate ASC NULLS LAST",
+        "format": "table",
+        "refId": "A"
+      }]
+    },
+    {
+      "id": 12,
+      "title": "SLA Violations by Warehouse",
+      "type": "barchart",
+      "gridPos": { "x": 0, "y": 23, "w": 12, "h": 8 },
+      "datasource": "PostgreSQL",
+      "targets": [{
+        "rawSql": "SELECT warehouse_id AS metric, COUNT(*) AS value FROM sla_violations WHERE created_at > NOW() - INTERVAL '24 hours' GROUP BY warehouse_id ORDER BY COUNT(*) DESC LIMIT 10",
+        "format": "table",
+        "refId": "A"
+      }],
+      "options": { "orientation": "horizontal" },
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" } } }
+    },
+    {
+      "id": 13,
+      "title": "Shipment Volume Trend",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 23, "w": 12, "h": 8 },
+      "datasource": "PostgreSQL",
+      "targets": [{
+        "rawSql": "SELECT date_trunc('minute', event_timestamp) AS time, COUNT(*) AS \"Total\", SUM(CASE WHEN is_delayed THEN 1 ELSE 0 END) AS \"Delayed\" FROM shipments WHERE $__timeFilter(event_timestamp) GROUP BY 1 ORDER BY 1",
+        "format": "time_series",
+        "refId": "A"
+      }],
+      "fieldConfig": { "defaults": { "color": { "mode": "palette-classic" }, "unit": "short" } }
+    }
+  ]
+}

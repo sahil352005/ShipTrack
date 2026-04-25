@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard | Logistics Intelligence</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root {
+            --bg: #0f172a;
+            --sidebar: #1e293b;
+            --primary: #38bdf8;
+            --card: #1e293b;
+            --text: #f8fafc;
+        }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 0; display: flex; height: 100vh; }
+        .sidebar { width: 260px; background: var(--sidebar); border-right: 1px solid #334155; padding: 2rem; display: flex; flex-direction: column; }
+        .logo { font-size: 1.5rem; font-weight: 600; margin-bottom: 3rem; color: var(--primary); }
+        .nav-item { padding: 0.75rem 1rem; border-radius: 0.5rem; color: #94a3b8; text-decoration: none; margin-bottom: 0.5rem; transition: all 0.2s; cursor: pointer; }
+        .nav-item:hover, .nav-item.active { background: #334155; color: white; }
+        .main { flex: 1; padding: 2rem; overflow-y: auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+        .stat-card { background: var(--card); padding: 1.5rem; border-radius: 1rem; border: 1px solid #334155; }
+        .stat-label { color: #94a3b8; font-size: 0.875rem; }
+        .stat-value { font-size: 1.5rem; font-weight: 600; margin-top: 0.5rem; }
+        #map { height: 500px; border-radius: 1rem; border: 1px solid #334155; }
+        .role-badge { background: #334155; padding: 0.25rem 0.75rem; border-radius: 1rem; font-size: 0.75rem; text-transform: uppercase; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">Logistics iQ</div>
+        <div class="nav-item active" onclick="showView('overview')">Overview</div>
+        <div class="nav-item" onclick="showView('map_view')">Fleet Map</div>
+        <div class="nav-item" onclick="showView('reports')" id="nav-reports">Reports</div>
+        <div class="nav-item" onclick="showView('users')" id="nav-users" class="hidden">User Management</div>
+        <div style="margin-top: auto;">
+            <div id="user-name" style="font-weight: 600;">Loading...</div>
+            <div id="user-role" class="role-badge">Role</div>
+            <div class="nav-item" onclick="logout()" style="margin-top: 1rem;">Logout</div>
+        </div>
+    </div>
+
+    <div class="main">
+        <div class="header">
+            <h1 id="view-title">Operational Overview</h1>
+            <div id="last-updated" style="color: #94a3b8; font-size: 0.875rem;"></div>
+        </div>
+
+        <div id="overview-content">
+            <div class="stats-grid" id="stats-container">
+                <!-- Dynamic stats -->
+            </div>
+            <div style="background: var(--card); padding: 2rem; border-radius: 1rem; border: 1px solid #334155;">
+                <h3 style="margin-top:0">System Status</h3>
+                <p>All core systems (Kafka, Spark, Postgres) are currently operational. Processing batch latency is within limits (1.2s).</p>
+            </div>
+        </div>
+
+        <div id="map-content" class="hidden">
+            <div id="map"></div>
+        </div>
+
+        <div id="reports-content" class="hidden">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Management Reports</h3>
+                    <p>Generate high-quality PDF/CSV reports for stakeholders.</p>
+                    <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                        <button onclick="downloadReport('/reports/executive.pdf')" style="background: var(--primary); border: none; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer;">Executive PDF</button>
+                        <button onclick="downloadReport('/reports/daily.csv')" style="background: #334155; border: none; padding: 0.5rem 1rem; color: white; border-radius: 0.5rem; cursor: pointer;">Daily CSV</button>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <h3>Delayed Operations</h3>
+                    <p>Detailed analysis of last 24h bottlenecks.</p>
+                    <button onclick="downloadReport('/reports/delays.csv')" style="background: #1e293b; border: 1px solid #334155; padding: 0.5rem 1rem; color: white; border-radius: 0.5rem; cursor: pointer; margin-top: 1rem;">Export Delays</button>
+                </div>
+            </div>
+        </div>
+        
+        <div id="users-content" class="hidden">
+            <table style="width: 100%; text-align: left; background: var(--card); border-radius: 1rem; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 1px solid #334155;">
+                        <th style="padding: 1rem;">Name</th>
+                        <th style="padding: 1rem;">Email</th>
+                        <th style="padding: 1rem;">Role</th>
+                    </tr>
+                </thead>
+                <tbody id="users-list"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        let userData = {};
+        let map = null;
+
+        async function init() {
+            const token = localStorage.getItem('token');
+            if (!token) window.location.href = '/login';
+
+            const res = await fetch('/auth/me', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (!res.ok) logout();
+            
+            userData = await res.json();
+            document.getElementById('user-name').innerText = userData.name;
+            document.getElementById('user-role').innerText = userData.role;
+
+            if (userData.role === 'Admin') {
+                document.getElementById('nav-users').classList.remove('hidden');
+            }
+            if (userData.role === 'Analyst') {
+                document.getElementById('nav-reports').classList.add('hidden');
+            }
+
+            loadStats();
+        }
+
+        async function loadStats() {
+            const token = localStorage.getItem('token');
+            const res = await fetch('/executive-summary', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            
+            const container = document.getElementById('stats-container');
+            const stats = [
+                { label: 'Total Shipments', val: data.total_shipments },
+                { label: 'Delayed', val: data.delayed_shipments, color: '#fb7185' },
+                { label: 'On-Time Rate', val: data.on_time_rate + '%' },
+                { label: 'SLA Violations', val: data.sla_violations_24h }
+            ];
+
+            container.innerHTML = stats.map(s => `
+                <div class="stat-card">
+                    <div class="stat-label">${s.label}</div>
+                    <div class="stat-value" style="color: ${s.color || 'white'}">${s.val}</div>
+                </div>
+            `).join('');
+        }
+
+        function showView(view) {
+            const views = ['overview', 'map', 'reports', 'users'];
+            views.forEach(v => {
+                document.getElementById(`${v}-content`)?.classList.add('hidden');
+                document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            });
+
+            document.getElementById(`${view}-content`).classList.remove('hidden');
+            document.getElementById('view-title').innerText = view.replace('_', ' ').toUpperCase();
+            
+            if (view === 'map') initMap();
+            if (view === 'users') loadUsers();
+        }
+
+        async function initMap() {
+            if (map) return;
+            map = L.map('map').setView([39.8283, -98.5795], 4);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+            const token = localStorage.getItem('token');
+            const res = await fetch('/map/shipments', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const shipments = await res.json();
+
+            shipments.forEach(s => {
+                const colors = {
+                    'delivered': 'green',
+                    'in_transit': 'yellow',
+                    'delayed': 'red',
+                    'created': 'blue'
+                };
+                const circle = L.circleMarker([s.latitude, s.longitude], {
+                    radius: 8,
+                    fillColor: colors[s.status] || 'grey',
+                    color: '#fff',
+                    weight: 1,
+                    opacity: 1,
+                    fillOpacity: 0.8
+                }).addTo(map);
+
+                circle.bindPopup(`
+                    <b>Shipment: ${s.shipment_id}</b><br>
+                    Status: ${s.status}<br>
+                    Region: ${s.region}<br>
+                    Risk Level: ${s.risk_level}
+                `);
+            });
+        }
+
+        async function loadUsers() {
+            const token = localStorage.getItem('token');
+            const res = await fetch('/users/', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const users = await res.json();
+            const list = document.getElementById('users-list');
+            list.innerHTML = users.map(u => `
+                <tr style="border-bottom: 1px solid #334155;">
+                    <td style="padding: 1rem;">${u.full_name}</td>
+                    <td style="padding: 1rem;">${u.email}</td>
+                    <td style="padding: 1rem;"><span class="role-badge">${u.role}</span></td>
+                </tr>
+            `).join('');
+        }
+
+        async function downloadReport(url) {
+            const token = localStorage.getItem('token');
+            const res = await fetch(url, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const blob = await res.blob();
+            const link = document.createElement('a');
+            link.href = window.URL.createObjectURL(blob);
+            link.download = url.split('/').pop();
+            link.click();
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+        }
+
+        init();
+    </script>
+</body>
+</html>
