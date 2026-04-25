@@ -93,6 +93,34 @@ async def get_executive_summary():
         "sla_violations_24h": sla[0] if sla else 0
     }
 
+@app.get("/analytics/shipments-over-time")
+async def get_shipments_over_time():
+    query = """
+        SELECT 
+            TO_CHAR(event_timestamp, 'HH24:00') as hour,
+            COUNT(*) as count
+        FROM shipments
+        WHERE event_timestamp > NOW() - INTERVAL '24 hours'
+        GROUP BY hour
+        ORDER BY hour
+    """
+    rows = await database.fetch_all(query)
+    return [dict(r) for r in rows]
+
+@app.get("/analytics/delivery-trends")
+async def get_delivery_trends():
+    query = """
+        SELECT 
+            region,
+            AVG(actual_delivery_hours) as avg_hours,
+            AVG(estimated_delivery_hours) as est_hours
+        FROM shipments
+        WHERE status = 'delivered'
+        GROUP BY region
+    """
+    rows = await database.fetch_all(query)
+    return [dict(r) for r in rows]
+
 @app.get("/")
 async def root():
     return {"message": "Enterprise Logistics Intelligence Platform", "version": "2.1.0", "ui": "/login", "docs": "/docs"}
