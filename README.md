@@ -107,5 +107,28 @@ The platform can be configured via environment variables in `docker-compose.yml`
 
 ---
 
+## 🧠 Intelligence: Risk Assessment Logic
+
+The platform calculates a **Shipment Risk Score (0-100)** in real-time to alert operators of potential delivery failures.
+
+### 🧮 Calculation Factors
+The score is determined by the following weighted rules:
+
+| Factor | Condition | Impact |
+| :--- | :--- | :--- |
+| **Long-Haul Strain** | Distance > 1000km while In-Transit | **+30 Points** |
+| **Operational Delay** | Shipment is already flagged as `delayed` | **+35 Points** |
+| **Aggressive SLA** | Est. Hours < 5 for Distance > 800km | **+25 Points** |
+
+### 📊 Risk Categorization
+| Score | Label | Action Required |
+| :--- | :--- | :--- |
+| **80-100** | 🔴 **Critical** | Immediate rerouting / Manual intervention |
+| **60-79** | 🟠 **High** | High probability of SLA violation |
+| **30-59** | 🟡 **Medium** | Monitor closely for corridor bottlenecks |
+| **0-29** | 🟢 **Low** | Routine automated tracking |
+
+---
+
 ## 📜 License
 This project is licensed under the MIT License - see the `LICENSE` file for details.
